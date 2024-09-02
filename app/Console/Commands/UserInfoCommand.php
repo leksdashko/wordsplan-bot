@@ -6,8 +6,8 @@ use Telegram\Bot\Commands\Command;
 
 class UserInfoCommand extends Command
 {
-    protected $name = "userinfo";
-    protected $description = "Get information about the user";
+    protected string $name = "userinfo";
+    protected string $description = "Get information about the user";
 
     public function handle()
     {
