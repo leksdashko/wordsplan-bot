@@ -34,13 +34,14 @@ return [
         'wordsplan' => [
             'token' => env('TELEGRAM_BOT_TOKEN'),
             'certificate_path' => env('TELEGRAM_CERTIFICATE_PATH', 'YOUR-CERTIFICATE-PATH'),
-            'webhook_url' => env('TELEGRAM_WEBHOOK_URL', 'YOUR-BOT-WEBHOOK-URL'),
+            'webhook_url' => env('TELEGRAM_WEBHOOK_URL'),
             /*
              * @see https://core.telegram.org/bots/api#update
              */
             'allowed_updates' => null,
             'commands' => [
-                //Acme\Project\Commands\MyTelegramBot\BotCommand::class
+							\App\Telegram\Commands\StartCommand::class,
+							\App\Telegram\Commands\UserInfoCommand::class,
             ],
         ],
 
@@ -97,7 +98,7 @@ return [
     | Default: https://api.telegram.org/bot
     |
     */
-    'base_bot_url' => null,
+    'base_bot_url' => "https://t.me/WordsplanBot",
 
     /*
     |--------------------------------------------------------------------------
@@ -130,8 +131,8 @@ return [
     |
     */
     'commands' => [
-				\App\Telegram\Commands\StartCommand::class,
-				\App\Telegram\Commands\UserInfoCommand::class,
+				// \App\Telegram\Commands\StartCommand::class,
+				// \App\Telegram\Commands\UserInfoCommand::class,
     ],
 
     /*
