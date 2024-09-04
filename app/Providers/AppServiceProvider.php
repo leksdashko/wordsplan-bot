@@ -3,7 +3,6 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
-use Telegram\Bot\Laravel\Facades\Telegram;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -20,7 +19,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-			$url = url('/' . env('TELEGRAM_BOT_TOKEN') . '/webhook');
-    	Telegram::setWebhook(['url' => $url]);
+        //
     }
 }
