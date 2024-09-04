@@ -70,7 +70,7 @@ class Handler extends WebhookHandler
 		//set the mode submit form
 		$message = "Write your message here. We will contact back to you!";
 
-		Telegraph::message($message)->keyboard(Keyboard::make()->buttons([
+		Telegraph::message($message)->protected()->keyboard(Keyboard::make()->buttons([
 			Button::make("👈 Go Back")->action("back")->param('from', 1),
 			Button::make("🏠 Main")->action("main")
 		])->chunk(2))->send();
@@ -90,9 +90,9 @@ class Handler extends WebhookHandler
 
 			if(!empty($translation)){
 				// add to db
-				$this->reply("✅ " . $word . " - " . $translation);
+				Telegraph::message("✅ " . $word . " - " . $translation)->protected()->send();
 			}else{
-				$this->reply("❌ add a translation for the word - " . $word);
+				Telegraph::message("❌ add a translation for the word - " . $word)->protected()->send();
 			}
 		}
 	}
