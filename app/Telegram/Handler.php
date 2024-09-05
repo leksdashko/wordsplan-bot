@@ -10,42 +10,47 @@ use DefStudio\Telegraph\Models\TelegraphBot;
 use DefStudio\Telegraph\Models\TelegraphChat;
 use Illuminate\Support\Stringable;
 use Illuminate\Support\Str;
+use App\Models\Vocabulary;
 
 class Handler extends WebhookHandler
 {
 	public function start(): void
 	{
-		$bot = TelegraphBot::find(1);
-		$info = $this->message->toArray();
-		$chatId = $info['chat']['id'];
+		$chat = $this->_getChat();
+		$data = $chat->info();
+		$chatId = $data['id'];
 		$message = "Good to see you again";
-
-		$chat = TelegraphChat::where('chat_id', $chatId)->get();
+		
 		if(!$chat){
 			$message = "Hello! I'm a *WordsPlan* bot. I will help you to lern new words";
 
+			$bot = TelegraphBot::find(1);
 			$chat = $bot->chats()->create([
 				'chat_id' => $chatId
 			]);
 		}
 
-		Telegraph::message($message)->keyboard(Keyboard::make()->buttons([
-			Button::make("📚 Learning")->action("learning"),
-			Button::make("🛠️ Settings")->action("settings"),
+		$chat->message($message)->keyboard(Keyboard::make()->buttons([
+			Button::make("📚 Learning")->action("learning")->param('chat_id', $chatId),
+			Button::make("🛠️ Settings")->action("settings")->param('chat_id', $chatId),
 			Button::make("🌎 Website")->url(env("APP_URL")),
-			Button::make("📝 Contacts")->action("contact")
+			Button::make("📝 Contacts")->action("contact")->param('chat_id', $chatId)
 		])->chunk(2))->send();
 	}
 
 	public function stop(): void
 	{
-		$this->reply("Stopped");
+		$chat = $this->_getChat();
+
+		$chat->message("Stopped")->send();
 	}
 
 	public function learning(): void
 	{
+		$chat = $this->_getChat();
+		
 		// show the list of the words to learn
-		Telegraph::message("Learning mode started")->send();
+		$chat->message("Learning mode started")->send();
 	}
 
 	public function settings(): void
@@ -67,10 +72,12 @@ class Handler extends WebhookHandler
 
 	public function contact(): void
 	{
+		$chat = $this->_getChat();
+
 		//set the mode submit form
 		$message = "Write your message here. We will contact back to you!";
 
-		Telegraph::message($message)->protected()->keyboard(Keyboard::make()->buttons([
+		$chat->message($message)->protected()->keyboard(Keyboard::make()->buttons([
 			Button::make("👈 Go Back")->action("back")->param('from', 1),
 			Button::make("🏠 Main")->action("main")
 		])->chunk(2))->send();
@@ -79,6 +86,8 @@ class Handler extends WebhookHandler
 	public function add(string $text): void
 	{
 		$specialChars = ['!', '@', '#', '$', '%', '^', '&', '*', '(', ')', '-', '=', '+', '[', ']', '{', '}', '\\', '|', ';', ':', '\'', '"', '<', '.', '>', '/', '?', '~', '`', '©', '®', '™', '§', '°', '¶', '•', '…', '¬', '±', '÷', '×', '£', '€', '¥', '¢', '¤', '¶'];
+		$chat = $this->_getChat();
+
 		$text = Str::title(Str::replace($specialChars, "", Str::squish($text)));
 		$strings = explode(',', $text);
 		foreach($strings as $words){
@@ -89,10 +98,31 @@ class Handler extends WebhookHandler
 			$translation = $couple[1] ?? "";
 
 			if(!empty($translation)){
-				// add to db
-				Telegraph::message("✅ " . $word . " - " . $translation)->protected()->send();
+				try {
+					$vc = Vocabulary::where([
+						'word' => $word,
+						'telegraph_chat_id' => $chat->id
+					])->first();
+
+					if($vc){
+						$vc->update([
+							'translation' => $translation,
+						]);
+					}else{
+						Vocabulary::create([
+							'telegraph_chat_id' => $chat->id,
+							'word' => $word,
+							'translation' => $translation,
+						]);
+					}
+
+					$chat->message("✅ " . $word . " - " . $translation)->protected()->send();
+				} catch (\Exception $e){
+					\Log::info($e);
+					$chat->message("❌ Error! Try to add it again. " . $word . " - " . $translation)->protected()->send();
+				}
 			}else{
-				Telegraph::message("❌ add a translation for the word - " . $word)->protected()->send();
+				$chat->message("❌ add a translation for the word - " . $word)->protected()->send();
 			}
 		}
 	}
@@ -102,14 +132,34 @@ class Handler extends WebhookHandler
 		$this->reply('Im helper');
 	}
 
-	public function actions(): void
+	public function actions()
 	{
-		Telegraph::message('car')->keyboard(Keyboard::make()->buttons([
-        Button::make("👀 See translation")->action("translation")->param('id', 1)->param('langs', 'en-ua'),
-        Button::make("✅ Mark as learned")->action("learned")->param('id', 1)
-        // Button::make("Like")->action("like"),
-				// Button::make(" Open")->url('https://test.it')  
-    ])->chunk(2))->send();
+		$chat = $this->_getChat();
+		$vc = Vocabulary::where([
+			'telegraph_chat_id' => $chat->id,
+			'is_learned' => false
+		])->first();
+
+		if(!$vc){
+			return $chat->message('You should add new words 📚')
+				->keyboard(Keyboard::make()
+				->buttons([
+					Button::make("💪 Repeat old words")->action("repeat")->param('chat_id', $chat->chat_id),
+				])
+				->chunk(2))->send();
+		}
+
+		$buttons = [
+			Button::make("👀 See translation")->action("translation")->param('id', $vc->id)->param('chat_id', $chat->chat_id),
+    ];
+
+		if(!$vc->is_learned){
+			$buttons[] = Button::make("✅ Mark as learned")->action("learned")->param('id', $vc->id)->param('chat_id', $chat->chat_id);
+		} else {
+			$buttons[] = Button::make("🤷‍♂️ Learn again")->action("again")->param('id', $vc->id)->param('chat_id', $chat->chat_id);
+		}
+
+		$chat->message($vc->word)->keyboard(Keyboard::make()->buttons($buttons)->chunk(2))->send();
 	}
 
 	public function like(): void
@@ -120,23 +170,54 @@ class Handler extends WebhookHandler
 	public function translation(): void
 	{
 		$id = $this->data->get('id');
-		$langs = explode('-', $this->data->get('langs'));
-		$from = $langs[0];
-		$to = $langs[1];
+		$chat = $this->_getChat();
+		
+		try {
+			$vc = Vocabulary::where([
+				'id' => $id,
+				'telegraph_chat_id' => $chat->id
+			])->first();
 
-		$this->reply('Машина - ' . $id . '; lang - ' . $from);
+			if(!$vc) {
+				$this->reply("Error");
+			}
+
+			$this->reply($vc->translation);
+		} catch (\Exception $e) {
+			$this->reply("Error! Try again");
+		}
+	}
+
+	public function repeat(): void
+	{
+		$chat = $this->_getChat();
+		$vc = Vocabulary::where([
+			'telegraph_chat_id' => $chat->id,
+			'is_learned' => true
+		])->first();
 	}
 
 	public function learned(): void
 	{
 		$id = $this->data->get('id');
+		$chat = $this->_getChat();
+		
+		try {
+			$vc = Vocabulary::where([
+				'id' => $id,
+				'telegraph_chat_id' => $chat->id
+			])->first();
 
-		$this->reply("You've learned this word - " . $id);
-	}
+			if($vc) {
+				$vc->update([
+					'is_learned' => true,
+				]);
 
-	public function read(): void
-	{
-		$this->reply('You have read the message with id : ' . $this->data->get('id'));
+				$this->reply("You've learned - " . $vc->word);
+			}
+		} catch (\Exception $e) {
+			$this->reply("Error! Try again");
+		}
 	}
 
 	public function adding(): void
@@ -163,5 +244,16 @@ class Handler extends WebhookHandler
 		}else{
 			$this->reply('Just replying');
 		}
+	}
+
+	private function _getChat()
+	{
+		$chatId = $this->data->get('chat_id');
+		if(!$chatId){
+			$info = $this->message->toArray();
+			$chatId = $info['chat']['id'];
+		}
+		
+		return TelegraphChat::where('chat_id', $chatId)->first();
 	}
 }
