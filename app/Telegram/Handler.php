@@ -134,17 +134,18 @@ class Handler extends WebhookHandler
 
 	public function actions()
 	{
+		$is_learned = $this->data->get('type') == 'repeat' ? true : false;
 		$chat = $this->_getChat();
 		$vc = Vocabulary::where([
 			'telegraph_chat_id' => $chat->id,
-			'is_learned' => false
+			'is_learned' => $is_learned
 		])->first();
 
 		if(!$vc){
 			return $chat->message('You should add new words 📚')
 				->keyboard(Keyboard::make()
 				->buttons([
-					Button::make("💪 Repeat old words")->action("repeat")->param('chat_id', $chat->chat_id),
+					Button::make("💪 Repeat old words")->action("actions")->param('chat_id', $chat->chat_id)->param('type', 'repeat'),
 				])
 				->chunk(2))->send();
 		}
@@ -156,7 +157,11 @@ class Handler extends WebhookHandler
 		if(!$vc->is_learned){
 			$buttons[] = Button::make("✅ Mark as learned")->action("learned")->param('id', $vc->id)->param('chat_id', $chat->chat_id);
 		} else {
-			$buttons[] = Button::make("🤷‍♂️ Learn again")->action("again")->param('id', $vc->id)->param('chat_id', $chat->chat_id);
+			$buttons[] = Button::make("🤷‍♂️ Learn again")
+				->action("learned")
+				->param('id', $vc->id)
+				->param('chat_id', $chat->chat_id)
+				->param('again', true);
 		}
 
 		$chat->message($vc->word)->keyboard(Keyboard::make()->buttons($buttons)->chunk(2))->send();
@@ -199,6 +204,7 @@ class Handler extends WebhookHandler
 
 	public function learned(): void
 	{
+		$learnAgain = $this->data->get('again');
 		$id = $this->data->get('id');
 		$chat = $this->_getChat();
 		
@@ -210,10 +216,15 @@ class Handler extends WebhookHandler
 
 			if($vc) {
 				$vc->update([
-					'is_learned' => true,
+					'is_learned' => $learnAgain ? false : true,
 				]);
 
-				$this->reply("You've learned - " . $vc->word);
+				$message = "You've learned - " . $vc->word;
+				if($learnAgain){
+					$message = 'You will learn word "' . $vc->word . '" again';
+				}
+
+				$this->reply($message);
 			}
 		} catch (\Exception $e) {
 			$this->reply("Error! Try again");
