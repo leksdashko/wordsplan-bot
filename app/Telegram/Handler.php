@@ -11,31 +11,39 @@ use DefStudio\Telegraph\Models\TelegraphChat;
 use Illuminate\Support\Stringable;
 use Illuminate\Support\Str;
 use App\Models\Vocabulary;
+use App\Models\Settings;
+use App\Telegram\TelegramFacade;
 
 class Handler extends WebhookHandler
 {
 	public function start(): void
 	{
-		$chat = $this->_getChat();
-		$data = $chat->info();
-		$chatId = $data['id'];
+		$facade = TelegramFacade::init($this->chat->chat_id);
+		$chat = $facade->getChat();
 		$message = "Good to see you again";
 		
-		if(!$chat){
+		if($facade->getCurrentMode() === ModeHandler::MODE_INITIAL){
+			// new user
 			$message = "Hello! I'm a *WordsPlan* bot. I will help you to lern new words";
 
-			$bot = TelegraphBot::find(1);
-			$chat = $bot->chats()->create([
-				'chat_id' => $chatId
-			]);
+			$facade->setMode(ModeHandler::MODE_APP_LANGUAGE);
 		}
 
-		$chat->message($message)->keyboard(Keyboard::make()->buttons([
-			Button::make("📚 Learning")->action("learning")->param('chat_id', $chatId),
-			Button::make("🛠️ Settings")->action("settings")->param('chat_id', $chatId),
-			Button::make("🌎 Website")->url(env("APP_URL")),
-			Button::make("📝 Contacts")->action("contact")->param('chat_id', $chatId)
-		])->chunk(2))->send();
+		$this->_checkAccess($facade, function() use ($chat, $message) {
+			$chat->message($message)->keyboard(Keyboard::make()->buttons([
+				Button::make("📚 Learning")
+					->action("learning")
+					->param('chat_id', $chat->id),
+				Button::make("🛠️ Settings")
+					->action("settings")
+					->param('chat_id', $chat->id),
+				Button::make("🌎 Website")
+					->url(env("APP_URL")),
+				Button::make("📝 Contacts")
+					->action("contact")
+					->param('chat_id', $chat->id)
+			])->chunk(2))->send();
+		});
 	}
 
 	public function stop(): void
@@ -47,15 +55,22 @@ class Handler extends WebhookHandler
 
 	public function learning(): void
 	{
-		$chat = $this->_getChat();
+		\Log::info($this->chat);
 		
 		// show the list of the words to learn
-		$chat->message("Learning mode started")->send();
+		// $chat->message("Learning mode started")->send();
 	}
 
 	public function settings(): void
 	{
-		$this->reply("Settings action");
+		$facade = TelegramFacade::init($this->chat->chat_id);
+		$chat = $facade->getChat();
+
+		$facade->getModeHandler()->check();
+
+		$this->_checkAccess($facade, function() use ($chat) {
+			
+		});
 	}
 
 	public function main(): void
@@ -245,6 +260,8 @@ class Handler extends WebhookHandler
 
 	protected function handleChatMessage(Stringable $text): void
 	{
+		\Log::info($text->value());
+
 		$mode = 'adding';
 		if($mode == 'adding'){
 			$words = explode(' ', $text->value());
@@ -257,14 +274,29 @@ class Handler extends WebhookHandler
 		}
 	}
 
-	private function _getChat()
+	private function _checkAccess($facade, $nextStep)
 	{
-		$chatId = $this->data->get('chat_id');
-		if(!$chatId){
-			$info = $this->message->toArray();
-			$chatId = $info['chat']['id'];
+		$messageBuilder = new MessageBuilder($facade->getChat());
+		$messageBuilder->setData(['langs' => $facade->getLangs()]);
+
+		switch($facade->getCurrentMode()) {
+			case ModeHandler::MODE_APP_LANGUAGE:
+				$messageBuilder->setMessage("Choose app language:");
+				$messageBuilder->addData(['settings_field' => 'app_lang']);
+				$messageBuilder->initChooseLanguageKeyboard()->send();
+				break;
+			case ModeHandler::MODE_LEARN_LANGUAGE:
+				$messageBuilder->setMessage("Choose learning language:");
+				$messageBuilder->addData(['settings_field' => 'learning_lang']);
+				$messageBuilder->initChooseLanguageKeyboard()->send();
+				break;
+			case ModeHandler::MODE_USER_LANGUAGE:
+				$messageBuilder->setMessage("Choose your language:");
+				$messageBuilder->addData(['settings_field' => 'user_lang']);
+				$messageBuilder->initChooseLanguageKeyboard()->send();
+				break;
+			default:
+				$nextStep();
 		}
-		
-		return TelegraphChat::where('chat_id', $chatId)->first();
 	}
 }
